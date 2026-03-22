@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPSゲームデモ　ジャイロ操作</title>
+    <!-- Three.js (3Dライブラリ)を読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        /* 全体スタイル - モバイルフレンドリー */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* タッチジェスチャーによるブラウザの動作を無効化 */
+        }
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        /* UI要素のコンテナ */
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* クリックイベントを下のキャンバスに透過させる */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding-top: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+        /* 照準（クロスヘア） */
+        #crosshair {
+            width: 2px;
+            height: 2px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 11;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background-color: #00FFFF; /* Neon Cyan */
+            box-shadow: 0 0 5px #00FFFF;
+            opacity: 0.8;
+            transition: transform 0.1s; /* Hit animation */
+        }
+        #crosshair::before { width: 30px; height: 2px; left: -15px; top: 0px; }
+        #crosshair::after { width: 2px; height: 30px; left: 0px; top: -15px; }
+
+        /* スコアボード */
+        #score-board {
+            background-color: rgba(0, 0, 0, 0.6);
+            color: #FFD700; /* Gold */
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            border: 2px solid #FFD700;
+            box-shadow: 0 0 10px #FFD700;
+        }
+        /* メッセージボックス（ヒット/ミス表示） */
+        #message-box {
+            position: absolute;
+            top: 100px;
+            width: 80%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .message-hit { color: #39FF14; box-shadow: 0 0 10px #39FF14; border: 2px solid #39FF14; }
+        .message-miss { color: #FF4500; box-shadow: 0 0 10px #FF4500; border: 2px solid #FF4500; }
+
+        /* ゲーム起動ボタン */
+        #start-button {
+            pointer-events: auto;
+            position: absolute; 
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); 
+            
+            padding: 15px 30px;
+            font-size: 1.8rem;
+            background-color: #00FFFF;
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 255, 255, 0.5);
+            transition: transform 0.1s;
+            z-index: 30; 
+        }
+        #start-button:active {
+            transform: translate(-50%, -50%) scale(0.98); 
+        }
+        
+        /* --- 左側の操作系コンテナ (ジャンプとジョイスティック) --- */
+        #left-controls {
+            position: absolute;
+            bottom: 30px; 
+            left: 30px;
+            display: flex; /* JSで表示するときにflexにする */
+            flex-direction: column;
+            align-items: center;
+            z-index: 15;
+            pointer-events: none; 
+        }
+
+        /* --- ジャンプボタン スタイル --- */
+        #jump-button {
+            pointer-events: auto; 
+            margin-bottom: 20px; 
+            padding: 10px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            background: linear-gradient(145deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(59, 130, 246, 0.5);
+            transition: transform 0.1s, box-shadow 0.1s;
+            width: 100px;
+        }
+        #jump-button:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.5);
+        }
+
+        /* --- Virtual Joystick Style --- */
+        #joystick-container {
+            position: relative; 
+            width: 120px;
+            height: 120px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            pointer-events: auto; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #joystick-handle {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(0, 255, 0, 0.6);
+            border: 2px solid #0F0;
+            border-radius: 50%;
+            transform: translate(0, 0);
+            transition: background-color 0.1s;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- Three.js Canvas will be placed here -->
+    </div>
+
+    <div id="ui-container">
+        <div id="score-board">スコア: 0</div>
+        <!-- 起動ボタンの初期テキストはsetupDOMで更新されます -->
+        <button id="start-button">タップ/クリックして開始</button>
+    </div>
+    
+    <div id="crosshair"></div>
+    <div id="message-box"></div>
+    
+    <!-- 左側のコントロール: 初期状態ではJSによって非表示 -->
+    <div id="left-controls">
+        <button id="jump-button">JUMP</button>
+        <div id="joystick-container">
+            <div id="joystick-handle"></div>
+        </div>
+    </div>
+
+
+    <script>
+        // Global variables
+        let scene, camera, renderer;
+        let targets = [];
+        let score = 0;
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let gameActive = false;
+        let isMobile = false; // デバイスがモバイル（タッチ対応）かどうかのフラグ
+
+        // Physics constants
+        const GRAVITY = -9.8; 
+        const JUMP_VELOCITY = 6.0; 
+        const PLAYER_HEIGHT = 1.6; 
+        const MAP_BOUNDARY = 49.5; 
+
+        // Player movement state
+        let playerVelocity = new THREE.Vector3(0, 0, 0); 
+        let isGrounded = true; 
+        const initialMoveSpeed = 7.0; 
+
+        // Keyboard state
+        let keyState = {}; 
+
+        // Camera control state (Look Sensitivity)
+        let controls = {
+            isLookTouchDown: false, 
+            lookTouchId: null,
+            lastX: 0,
+            lastY: 0,
+            initialX: 0, 
+            initialY: 0, 
+            sensitivity: 0.003,
+            rotation: new THREE.Euler(0, 0, 0, 'YXZ')
+        };
+        const TAP_THRESHOLD = 5; 
+        let prevTime = performance.now();
+
+        // Joystick control state
+        const maxRadius = 30;
+        let joystickCenter = new THREE.Vector2();
+        let isJoystickTouchDown = false;
+        let joystickTouchId = null;
+
+        let scoreBoard, messageBox, startButton, joystickContainer, joystickHandle, jumpButton;
+
+        // Three.js initialization
+        function init() {
+            const container = document.getElementById('game-container');
+
+            // --- Device Detection ---
+            // タッチイベントの有無または最大タッチポイント数でモバイルを判定
+            isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+            // Scene, Camera, Renderer setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x101010);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, PLAYER_HEIGHT, 0);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // Lights and Environment
+            scene.add(new THREE.AmbientLight(0x404040, 5));
+            const light = new THREE.PointLight(0xffffff, 50, 100);
+            light.position.set(0, 20, 0);
+            scene.add(light);
+            createEnvironment();
+
+            window.addEventListener('resize', onWindowResize);
+            
+            // Hide canvas and controls before game starts
+            renderer.domElement.style.display = 'none';
+            document.getElementById('crosshair').style.display = 'none';
+            document.getElementById('left-controls').style.display = 'none'; // 初期は非表示
+        }
+
+        // Setup DOM elements and event listeners
+        function setupDOM() {
+            scoreBoard = document.getElementById('score-board');
+            messageBox = document.getElementById('message-box');
+            startButton = document.getElementById('start-button');
+            joystickContainer = document.getElementById('joystick-container');
+            joystickHandle = document.getElementById('joystick-handle');
+            jumpButton = document.getElementById('jump-button');
+            
+            if (startButton) {
+                startButton.addEventListener('click', startGame);
+
+                // デバイスに応じたボタンテキストに更新
+                if (isMobile) {
+                    startButton.textContent = "タップして開始 (移動: 左パッド, 視点/射撃: 右タッチ)";
+                } else {
+                    startButton.textContent = "クリックして開始 (移動: WASD, 視点/射撃: マウス)";
+                }
+            }
+
+            // --- モバイル操作のイベント設定 (isMobileがtrueの場合のみ有効) ---
+            if (isMobile) {
+                if (jumpButton) {
+                    // タッチ操作による他の動作をキャンセル
+                    jumpButton.addEventListener('touchstart', (e) => {
+                        e.preventDefault(); 
+                        handleJump();
+                    }, { passive: false });
+                }
+
+                if (joystickContainer) {
+                    joystickContainer.addEventListener('touchstart', onJoystickStart, { passive: false });
+                }
+                document.addEventListener('touchmove', onJoystickMove, { passive: false });
+                document.addEventListener('touchend', onJoystickEnd, { passive: false });
+
+                if (renderer && renderer.domElement) {
+                    const canvas = renderer.domElement;
+                    canvas.addEventListener('touchstart', onLookStart, { passive: false });
+                    document.addEventListener('touchmove', onLookMove, { passive: false });
+                    document.addEventListener('touchend', onLookEnd, { passive: false });
+                }
+            } 
+            // --- PC操作のイベント設定 (常に有効) ---
+            
+            if (renderer && renderer.domElement) {
+                const canvas = renderer.domElement;
+                // PC Mouse Events (全画面で有効)
+                canvas.addEventListener('mousedown', onMouseDown, { passive: false });
+            }
+
+            // Keyboard Controls (常に有効)
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+        }
+
+        // Keyboard Event Handlers
+        function onKeyDown(event) {
+            if (!gameActive) return;
+            keyState[event.code] = true;
+            
+            if (event.code === 'Space') {
+                event.preventDefault(); 
+                handleJump();
+            }
+        }
+
+        function onKeyUp(event) {
+            if (!gameActive) return;
+            keyState[event.code] = false;
+        }
+
+        function createEnvironment() {
+            // Floor (100x100)
+            const floorGeometry = new THREE.PlaneGeometry(100, 100);
+            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x004444, side: THREE.DoubleSide });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = Math.PI / 2;
+            scene.add(floor);
+
+            // Grid Helper
+            const gridHelper = new THREE.GridHelper(100, 100, 0x00FF00, 0x00FF00);
+            gridHelper.position.y = 0.01;
+            scene.add(gridHelper);
+        }
+
+        function createTarget() {
+            const x = (Math.random() * 2 - 1) * 25;
+            const y = Math.random() * 5 + 1.5; 
+            const z = -(Math.random() * 20 + 5); 
+
+            // Determine target type (0: Static, 1: X-axis, 2: Y-axis, 3: Z-axis)
+            const movementType = Math.floor(Math.random() * 4); 
+
+            let targetColor = 0xFF00FF; 
+            if (movementType === 0) targetColor = 0xFF4500; 
+            if (movementType === 2) targetColor = 0x00FFFF; 
+            if (movementType === 3) targetColor = 0xFFFF00; 
+
+            const targetGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const targetMaterial = new THREE.MeshPhongMaterial({
+                color: targetColor,
+                emissive: targetColor / 2,
+                specular: 0xffffff,
+                shininess: 30
+            });
+
+            const target = new THREE.Mesh(targetGeometry, targetMaterial);
+            target.position.set(x, y, z);
+            
+            target.userData = {
+                movementType: movementType,
+                moveSpeed: (movementType !== 0 ? (0.1 + Math.random() * 0.1) : 0),
+                maxRange: 4 + Math.random() * 4,
+                initialPosition: target.position.clone(),
+                sineOffset: Math.random() * Math.PI * 2
+            };
+
+            targets.push(target);
+            scene.add(target);
+        }
+
+        function startGame() {
+            if (!startButton || !document.getElementById('left-controls')) {
+                 console.error("DOM elements not found.");
+                 return;
+            }
+
+            if (gameActive) return;
+            gameActive = true;
+            
+            // Hide button and show canvas/crosshair
+            startButton.style.display = 'none';
+            renderer.domElement.style.display = 'block';
+            document.getElementById('crosshair').style.display = 'block';
+            
+            // モバイルの場合のみコントロールを表示
+            if (isMobile) {
+                 document.getElementById('left-controls').style.display = 'flex';
+            }
+
+            // Initial target generation
+            targets.length = 0;
+            for (let i = 0; i < 5; i++) {
+                createTarget();
+            }
+
+            // Calculate joystick center position for mobile
+            if (isMobile) {
+                const rect = joystickContainer.getBoundingClientRect();
+                joystickCenter.set(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            }
+
+            animate();
+            showMessage("ゲームスタート！", 'message-hit', 2000);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Recalculate joystick center on resize
+            if (isMobile) {
+                const rect = joystickContainer.getBoundingClientRect();
+                joystickCenter.set(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            }
+        }
+
+        // --- Jump Function ---
+        function handleJump() {
+            if (isGrounded && gameActive) {
+                playerVelocity.y = JUMP_VELOCITY;
+                isGrounded = false;
+            }
+        }
+
+        // --- Joystick Control (Movement) ---
+        function onJoystickStart(event) {
+            if (!gameActive) return;
+            if (event.touches.length > 0) {
+                isJoystickTouchDown = true;
+                joystickTouchId = event.touches[0].identifier;
+                handleJoystickInput(event.touches[0]);
+                event.preventDefault();
+            }
+        }
+
+        function onJoystickMove(event) {
+            if (!isJoystickTouchDown || !gameActive) return;
+
+            let touch;
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                if (event.changedTouches[i].identifier === joystickTouchId) {
+                    touch = event.changedTouches[i];
+                    break;
+                }
+            }
+            if (touch) {
+                handleJoystickInput(touch);
+            }
+        }
+
+        function onJoystickEnd(event) {
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                if (event.changedTouches[i].identifier === joystickTouchId) {
+                    if (joystickHandle) {
+                        joystickHandle.style.transform = `translate(0px, 0px)`;
+                    }
+                    playerVelocity.x = 0;
+                    playerVelocity.z = 0;
+                    isJoystickTouchDown = false;
+                    joystickTouchId = null;
+                    event.preventDefault(); 
+                    break;
+                }
+            }
+        }
+
+        function handleJoystickInput(touch) {
+            let dx = touch.clientX - joystickCenter.x;
+            let dy = touch.clientY - joystickCenter.y;
+
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            let angle = Math.atan2(dy, dx);
+
+            if (distance > maxRadius) {
+                dx = Math.cos(angle) * maxRadius;
+                dy = Math.sin(angle) * maxRadius;
+                distance = maxRadius;
+            }
+
+            if (joystickHandle) {
+                joystickHandle.style.transform = `translate(${dx}px, ${dy}px)`;
+            }
+
+            // X-axis: 左右移動 (Strafe)
+            playerVelocity.x = dx / maxRadius;
+            // Z-axis: 前後移動 (画面Y軸 - 上が負、下が正)
+            playerVelocity.z = dy / maxRadius; 
+        }
+
+
+        // --- Look Control (Touch for Mobile - Prevents interference with joystick) ---
+        function onLookStart(event) {
+            if (!gameActive) return;
+
+            // モバイルの場合のみ、左側コントロールエリア外でLook操作を有効にする
+            if (!isMobile) return; 
+            
+            const leftControlsRect = document.getElementById('left-controls').getBoundingClientRect();
+
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                // 左側のコントロールエリアの外側でタッチした場合のみ処理
+                if (touch.clientX > leftControlsRect.right) {
+                    controls.isLookTouchDown = true;
+                    controls.lookTouchId = touch.identifier;
+                    controls.lastX = touch.clientX;
+                    controls.lastY = touch.clientY;
+                    
+                    controls.initialX = touch.clientX;
+                    controls.initialY = touch.clientY;
+
+                    event.preventDefault();
+                    break;
+                }
+            }
+        }
+
+        function onLookMove(event) {
+            if (!controls.isLookTouchDown || !gameActive || !isMobile) return;
+
+            let touch;
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                if (event.changedTouches[i].identifier === controls.lookTouchId) {
+                    touch = event.changedTouches[i];
+                    break;
+                }
+            }
+
+            if (touch) {
+                const deltaX = touch.clientX - controls.lastX;
+                const deltaY = touch.clientY - controls.lastY;
+
+                controls.rotation.y -= deltaX * controls.sensitivity;
+                controls.rotation.x -= deltaY * controls.sensitivity;
+                controls.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, controls.rotation.x));
+
+                camera.quaternion.setFromEuler(controls.rotation);
+
+                controls.lastX = touch.clientX;
+                controls.lastY = touch.clientY;
+            }
+        }
+
+        function onLookEnd(event) {
+            if (!isMobile) return;
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                if (event.changedTouches[i].identifier === controls.lookTouchId) {
+                    
+                    const touch = event.changedTouches[i];
+                    const dx = Math.abs(touch.clientX - controls.initialX);
+                    const dy = Math.abs(touch.clientY - controls.initialY);
+
+                    if (dx < TAP_THRESHOLD && dy < TAP_THRESHOLD) {
+                        handleShot();
+                    }
+
+                    controls.isLookTouchDown = false;
+                    controls.lookTouchId = null;
+                    break;
+                }
+            }
+        }
+
+        // --- Look Control (Mouse for PC - Full screen operation) ---
+
+        function onMouseDown(event) {
+            if (!gameActive || event.button !== 0) return; // Only process left click
+
+            controls.isLookTouchDown = true; 
+            controls.lastX = event.clientX;
+            controls.lastY = event.clientY;
+            
+            controls.initialX = event.clientX;
+            controls.initialY = event.clientY;
+
+            event.preventDefault(); 
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+        
+        function onMouseMove(event) {
+            if (!controls.isLookTouchDown || !gameActive) return;
+
+            const deltaX = event.clientX - controls.lastX;
+            const deltaY = event.clientY - controls.lastY;
+
+            controls.rotation.y -= deltaX * controls.sensitivity;
+            controls.rotation.x -= deltaY * controls.sensitivity;
+            controls.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, controls.rotation.x));
+
+            camera.quaternion.setFromEuler(controls.rotation);
+
+            controls.lastX = event.clientX;
+            controls.lastY = event.clientY;
+        }
+
+        function onMouseUp(event) {
+            if (!gameActive || event.button !== 0) return;
+
+            if (controls.isLookTouchDown) {
+                const dx = Math.abs(event.clientX - controls.initialX);
+                const dy = Math.abs(event.clientY - controls.initialY);
+
+                if (dx < TAP_THRESHOLD && dy < TAP_THRESHOLD) {
+                    handleShot();
+                }
+
+                controls.isLookTouchDown = false;
+                
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            }
+        }
+
+        // --- Shot Handling (Raycasting from center) ---
+
+        function handleShot() {
+            mouse.x = 0;
+            mouse.y = 0;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(targets);
+
+            if (intersects.length > 0) {
+                const hitTarget = intersects[0].object;
+                if (targets.includes(hitTarget)) {
+                    
+                    let points = 100;
+                    let msg = "動く的撃破！ +100";
+
+                    if (hitTarget.userData.movementType === 0) {
+                        points = 50;
+                        msg = "静止的ゲット！ +50";
+                    }
+
+                    hitTarget.geometry.dispose();
+                    hitTarget.material.dispose();
+                    scene.remove(hitTarget);
+                    targets.splice(targets.indexOf(hitTarget), 1);
+                    updateScore(points);
+                    showMessage(msg, 'message-hit');
+
+                    const crosshairElement = document.getElementById('crosshair');
+                    if (crosshairElement) {
+                        crosshairElement.style.transform = 'translate(-50%, -50%) scale(1.5)';
+                        setTimeout(() => {
+                            crosshairElement.style.transform = 'translate(-50%, -50%) scale(1)';
+                        }, 100);
+                    }
+                }
+            } else {
+                updateScore(-100);
+                showMessage("ミス！ -100", 'message-miss');
+            }
+        }
+
+        function updateScore(points) {
+            score += points;
+            score = Math.max(0, score);
+            scoreBoard.textContent = `スコア: ${score}`;
+        }
+
+        function showMessage(text, className, duration = 500) {
+            clearTimeout(messageBox.timer);
+            messageBox.textContent = text;
+            messageBox.className = '';
+            messageBox.classList.add(className);
+            messageBox.style.opacity = 1;
+
+            messageBox.timer = setTimeout(() => {
+                messageBox.style.opacity = 0;
+            }, duration);
+        }
+
+        // --- Animation Loop ---
+
+        function animate() {
+            if (!gameActive) return;
+
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            // 1. Target Movement 
+            targets.forEach(target => {
+                const userData = target.userData;
+
+                if (userData.movementType !== 0) {
+                    const phase = (time * userData.moveSpeed) / 1000 + userData.sineOffset;
+                    const offset = Math.sin(phase) * userData.maxRange;
+
+                    switch (userData.movementType) {
+                        case 1: 
+                            target.position.x = userData.initialPosition.x + offset;
+                            break;
+                        case 2: 
+                            target.position.y = userData.initialPosition.y + offset * 0.5;
+                            break;
+                        case 3: 
+                            target.position.z = userData.initialPosition.z + offset;
+                            break;
+                    }
+                }
+                
+                target.rotation.y += 0.01;
+            });
+
+            // 2. Player Movement (Horizontal - Combined Joystick and Keyboard)
+            const moveSpeed = initialMoveSpeed;
+            let moveX = 0; 
+            let moveZ = 0; 
+
+            if (isMobile && isJoystickTouchDown) {
+                // Joystick input: use normalized velocity components (playerVelocity.x is strafe, playerVelocity.z is screen Y)
+                moveX = playerVelocity.x; 
+                
+                // 修正: ジョイスティックを上に倒す(playerVelocity.zが負) = 前進(moveZが負)
+                moveZ = playerVelocity.z; 
+
+            } else {
+                // Keyboard input: use WASD keys
+                if (keyState['KeyW']) moveZ -= 1; // Forward
+                if (keyState['KeyS']) moveZ += 1; // Backward
+                if (keyState['KeyA']) moveX -= 1; // Strafe Left
+                if (keyState['KeyD']) moveX += 1; // Strafe Right
+                
+                if (moveX !== 0 || moveZ !== 0) {
+                    const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+                    moveX /= length;
+                    moveZ /= length;
+                }
+            }
+            
+            if (moveX !== 0 || moveZ !== 0) {
+                const moveVector = new THREE.Vector3(moveX, 0, moveZ).multiplyScalar(moveSpeed * delta);
+
+                const rotationY = new THREE.Quaternion().setFromAxisAngle(
+                    new THREE.Vector3(0, 1, 0), 
+                    controls.rotation.y
+                );
+                
+                moveVector.applyQuaternion(rotationY);
+
+                const newX = camera.position.x + moveVector.x;
+                const newZ = camera.position.z + moveVector.z;
+                
+                // Boundary checks
+                camera.position.x = Math.max(-MAP_BOUNDARY, Math.min(MAP_BOUNDARY, newX));
+                camera.position.z = Math.max(-MAP_BOUNDARY, Math.min(MAP_BOUNDARY, newZ));
+            }
+            
+            // 3. Player Movement (Vertical - Gravity/Jump)
+            if (!isGrounded) {
+                playerVelocity.y += GRAVITY * delta;
+            }
+
+            camera.position.y += playerVelocity.y * delta;
+            
+            if (camera.position.y <= PLAYER_HEIGHT) {
+                camera.position.y = PLAYER_HEIGHT;
+                playerVelocity.y = 0;
+                isGrounded = true;
+            }
+
+            // 4. Target Replenishment
+            if (targets.length < 5) {
+                createTarget();
+            }
+
+            renderer.render(scene, camera);
+            prevTime = time;
+        }
+
+        // Initialize after all DOM elements are loaded
+        window.onload = function () {
+            init(); 
+            setupDOM();
+        }
+
+    </script>
+</body>
+</html>
+
