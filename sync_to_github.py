@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 WRITENING_URL = "https://writening.net/page?XwwNSm"
 INTERVAL_SECONDS = 30  # 巡回チェックの間隔（秒）
 
-# 【超重要】先ほど作った、大正解のフォルダパスを正確に指定してロックします
+# あなたの正しいフォルダパス
 HTML_FILE_PATH = "nazonazo/index.html"
 # =========================================================
 
@@ -47,7 +47,7 @@ def fetch_and_parse_riddles():
         return None
 
 def update_html_file(riddles_data):
-    """大正解のパス(nazonazo/index.html)の中身を安全に書き換える"""
+    """新しいHTMLの仕様に合わせて、末尾にupdateRiddles命令を安全に埋め込む"""
     if not os.path.exists(HTML_FILE_PATH):
         print(f"[致命的エラー] 指定されたパスにHTMLファイルが存在しません: {HTML_FILE_PATH}")
         return False
@@ -55,51 +55,52 @@ def update_html_file(riddles_data):
     with open(HTML_FILE_PATH, "r", encoding="utf-8") as f:
         content = f.read()
         
+    # なぞなぞデータを綺麗なJSON形式に変換
     riddles_json = json.dumps(riddles_data, ensure_ascii=False)
     
-    # HTML内の let riddles = [...]; の部分を最新データに一発置換
-    pattern = r'let riddles\s*=\s*\[.*?\]\s*;'
-    replacement = f'let riddles = {riddles_json};'
+    # 新しいHTMLを起動するための専用命令文を作成
+    # ページが読み込まれた後に自動でupdateRiddlesを実行させる仕掛けです
+    injection_code = f"\n<script>window.addEventListener('DOMContentLoaded', () => {{ setTimeout(() => {{ updateRiddles({riddles_json}); }}, 300); }});</script>\n"
     
-    if not re.search(pattern, content):
-        pattern = r'let riddles\s*=\s*\[\s*\]'
-        
-    new_content = re.sub(pattern, replacement, content)
+    # 過去に埋め込んだ古い自動起動スクリプトが残っていれば、蓄積を防ぐために一旦消去するクレンジング処理
+    content = re.sub(r'<script>window\.addEventListener\(\'DOMContentLoaded\'.*?<\/script>', '', content, flags=re.DOTALL)
     
-    # 前回の内容と完全に一致＝変化がない場合は、無駄な処理を避けるためスキップ
+    # </body>タグの直前に、新しい自動起動命令をスッと挟み込む
+    if "</body>" in content:
+        new_content = content.replace("</body>", f"{injection_code}</body>")
+    else:
+        # 万が一</body>がなくても末尾に追加
+        new_content = content + injection_code
+    
+    # 前回の内容と完全に一致＝変化がない場合は送信をスキップ
     if content == new_content:
         return False
         
     with open(HTML_FILE_PATH, "w", encoding="utf-8") as f:
         f.write(new_content)
-    print(f"[データ書込成功] 『{HTML_FILE_PATH}』に {len(riddles_data)} 問のなぞなぞを注入しました。")
+    print(f"[データ注入成功] 『{HTML_FILE_PATH}』の内部スイッチをONにし、{len(riddles_data)}問をセットしました。")
     return True
 
 def push_to_github():
-    """新しいフォルダ構造ごと、GitHubへコミット＆プッシュ（送信）する"""
-    print("[GitHub送信] 変更をキャッチしました。GitHubサーバーへ転送を開始します...")
+    """最新の「main」ブランチへ正確にコミット＆プッシュ（送信）する"""
+    print("[GitHub送信] 変更をキャッチ。GitHubへ最新データを転送中...")
     try:
-        # 新しいフォルダ（nazonazo）とその中身すべてをGitの送信リストに加える
+        # 変更されたファイルをGitの追跡対象に加える
         subprocess.run(["git", "add", "."], check=True)
         
         # コミットメッセージの作成
-        commit_msg = f"Deploy correct folder layout & Auto-sync: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        commit_msg = f"Riddle Flow API Sync: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
         
-        # 現在使用中の有効なブランチ名（mainかmaster）を自動判別
-        br_res = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True)
-        current_branch = br_res.stdout.strip()
-        
-        # GitHubの指定ブランチへ一気にアップロード！
-        subprocess.run(["git", "push", "origin", current_branch], check=True)
-        print("🎉 【完全大成功】GitHubへのアップロードが完了しました！")
-        print("💡 豆知識: GitHubのロボットが公開サイトを組み立て直すまで、1分〜3分ほど時間がかかります。")
+        # 確実に「main」ブランチに対して送信を行います
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+        print("🎉 【完全大成功】GitHubへのデータ転送が完了しました！")
     except subprocess.CalledProcessError as e:
-        print(f"[Gitエラー] 転送中にエラーが発生しました。通信環境などを確認してください: {e}")
+        print(f"[Gitエラー] 転送中にエラーが発生しました: {e}")
 
 if __name__ == "__main__":
     print("==================================================")
-    print("🚀 【フォルダ構造・完全一致版】自動同期システム起動")
+    print("🚀 【Riddle Flow専用・API完全適合版】同期システム起動")
     print(f"   ターゲットファイル: {HTML_FILE_PATH}")
     print(f"   パトロール間隔    : {INTERVAL_SECONDS}秒ごと")
     print("==================================================")
