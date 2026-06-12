@@ -6,17 +6,17 @@ import subprocess
 import requests
 from bs4 import BeautifulSoup
 
-# ==================== カスタマイズ設定 ====================
+# ==================== システム設定項目 ====================
 WRITENING_URL = "https://writening.net/page?XwwNSm"
 INTERVAL_SECONDS = 30  # 巡回チェックの間隔（秒）
 
-# 【超重要】GitHub Pagesの公開URL( game/nazonazo )と完全に一致する正しいパスを指定
+# 【超重要】先ほど作った、大正解のフォルダパスを正確に指定してロックします
 HTML_FILE_PATH = "nazonazo/index.html"
 # =========================================================
 
 def fetch_and_parse_riddles():
-    """Writeningから最新データをダウンロードして解析する"""
-    print(f"\n[{time.strftime('%H:%M:%S')}] 🔍 Writening.netを巡回チェック中...")
+    """Writeningから最新のクイズデータをダウンロードして解析する"""
+    print(f"\n[{time.strftime('%H:%M:%S')}] 🔍 Writening.netをパトロール中...")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         response = requests.get(WRITENING_URL, headers=headers)
@@ -26,7 +26,7 @@ def fetch_and_parse_riddles():
         content_element = soup.find(class_="section-item")
         
         if not content_element:
-            print("[警告] 本文エリア(section-item)が見つかりませんでした。")
+            print("[警告] Writeningの本文(section-item)が見つかりませんでした。")
             return None
             
         raw_text = content_element.get_text(strip=True)
@@ -47,10 +47,9 @@ def fetch_and_parse_riddles():
         return None
 
 def update_html_file(riddles_data):
-    """正しい位置にあるHTMLファイル(nazonazo/index.html)の中身を安全に書き換える"""
+    """大正解のパス(nazonazo/index.html)の中身を安全に書き換える"""
     if not os.path.exists(HTML_FILE_PATH):
-        print(f"[致命的エラー] ターゲットファイルが見つかりません: {HTML_FILE_PATH}")
-        print("フォルダの作成に失敗しているか、配置が違います。")
+        print(f"[致命的エラー] 指定されたパスにHTMLファイルが存在しません: {HTML_FILE_PATH}")
         return False
             
     with open(HTML_FILE_PATH, "r", encoding="utf-8") as f:
@@ -58,7 +57,7 @@ def update_html_file(riddles_data):
         
     riddles_json = json.dumps(riddles_data, ensure_ascii=False)
     
-    # HTML内の let riddles = [...]; を最新データに置換する正規表現
+    # HTML内の let riddles = [...]; の部分を最新データに一発置換
     pattern = r'let riddles\s*=\s*\[.*?\]\s*;'
     replacement = f'let riddles = {riddles_json};'
     
@@ -67,42 +66,42 @@ def update_html_file(riddles_data):
         
     new_content = re.sub(pattern, replacement, content)
     
-    # 内容に変化がない場合は書き換えない（無駄なGitプッシュを防止）
+    # 前回の内容と完全に一致＝変化がない場合は、無駄な処理を避けるためスキップ
     if content == new_content:
         return False
         
     with open(HTML_FILE_PATH, "w", encoding="utf-8") as f:
         f.write(new_content)
-    print(f"[データ更新完了] 『{HTML_FILE_PATH}』に {len(riddles_data)} 問のデータを正常注入しました。")
+    print(f"[データ書込成功] 『{HTML_FILE_PATH}』に {len(riddles_data)} 問のなぞなぞを注入しました。")
     return True
 
 def push_to_github():
-    """新しく作ったフォルダ構造ごとGitHubへ完全にコミット＆プッシュする"""
-    print("[GitHub送信] 変更を検知しました。GitHubサーバーへ自動アップロード中...")
+    """新しいフォルダ構造ごと、GitHubへコミット＆プッシュ（送信）する"""
+    print("[GitHub送信] 変更をキャッチしました。GitHubサーバーへ転送を開始します...")
     try:
-        # 新しいフォルダ（nazonazo）や変更されたファイルを全てGitの追跡対象に加える
+        # 新しいフォルダ（nazonazo）とその中身すべてをGitの送信リストに加える
         subprocess.run(["git", "add", "."], check=True)
         
-        # 自動コミット
-        commit_msg = f"Fix folder layout & Auto-sync riddles: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        # コミットメッセージの作成
+        commit_msg = f"Deploy correct folder layout & Auto-sync: {time.strftime('%Y-%m-%d %H:%M:%S')}"
         subprocess.run(["git", "commit", "-m", commit_msg], check=True)
         
-        # 現在使用中のブランチ名（mainかmaster）を自動検出
+        # 現在使用中の有効なブランチ名（mainかmaster）を自動判別
         br_res = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True)
         current_branch = br_res.stdout.strip()
         
-        # GitHubの同じブランチへアップロードを実行
+        # GitHubの指定ブランチへ一気にアップロード！
         subprocess.run(["git", "push", "origin", current_branch], check=True)
-        print("🎉 【アップロード成功】GitHubへのファイル転送が100%完了しました！")
-        print("💡 案内: GitHub Pages側で公開サイトが再構築されるまで、1〜3分ほどお待ちください。")
+        print("🎉 【完全大成功】GitHubへのアップロードが完了しました！")
+        print("💡 豆知識: GitHubのロボットが公開サイトを組み立て直すまで、1分〜3分ほど時間がかかります。")
     except subprocess.CalledProcessError as e:
-        print(f"[Gitエラー] 送信処理中に何らかのエラーが発生しました: {e}")
+        print(f"[Gitエラー] 転送中にエラーが発生しました。通信環境などを確認してください: {e}")
 
 if __name__ == "__main__":
     print("==================================================")
-    print("🚀 【新・フォルダ完全一致版】自動同期システム起動")
-    print(f"   同期ファイル: {HTML_FILE_PATH}")
-    print(f"   チェック間隔: {INTERVAL_SECONDS}秒ごと")
+    print("🚀 【フォルダ構造・完全一致版】自動同期システム起動")
+    print(f"   ターゲットファイル: {HTML_FILE_PATH}")
+    print(f"   パトロール間隔    : {INTERVAL_SECONDS}秒ごと")
     print("==================================================")
     
     try:
@@ -113,7 +112,7 @@ if __name__ == "__main__":
                 if is_changed:
                     push_to_github()
                 else:
-                    print("[スキップ] Writeningに変更がないため、送信をパスしました。")
+                    print("[変更なし] Writeningに変化はありません。送信をパスしました。")
                     
             time.sleep(INTERVAL_SECONDS)
     except KeyboardInterrupt:
